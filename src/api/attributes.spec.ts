@@ -206,6 +206,21 @@ describe('$(...)', () => {
       expect($html.attr('data-foo')).toBe('bar');
     });
 
+    it('(key) : should get mixed-case attributes the parser keeps in HTML mode', () => {
+      /*
+       * The parser keeps mixed-case names on SVG elements (e.g. `viewBox`),
+       * so the exact key must be tried before lowercasing (#5729).
+       */
+      const $svg = load(
+        '<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid"><linearGradient gradientTransform="rotate(45)"></linearGradient></svg>',
+      )('svg');
+      expect($svg.attr('viewBox')).toBe('0 0 100 100');
+      expect($svg.attr('preserveAspectRatio')).toBe('xMidYMid');
+      expect($svg.children().first().attr('gradientTransform')).toBe(
+        'rotate(45)',
+      );
+    });
+
     it('(key) : should preserve case in xmlMode and not lowercase', () => {
       const $xml = load('<div ID="fruit" CLASS="apple"></div>', {
         xmlMode: true,
@@ -230,6 +245,27 @@ describe('$(...)', () => {
       expect($html.attr('id')).toBe('fruit!');
       expect($html.attr('ID')).toBe('fruit!');
       expect(Object.keys($html[0].attribs)).toEqual(['id']);
+    });
+
+    it('(key, value) : should set mixed-case attribute in HTML mode without duplicate keys', () => {
+      const $svg = load('<svg viewBox="0 0 100 100"></svg>')('svg');
+      $svg.attr('viewBox', '0 0 50 50');
+      expect($svg.attr('viewBox')).toBe('0 0 50 50');
+      expect(Object.keys($svg[0].attribs)).toEqual(['viewBox']);
+    });
+
+    it('(map) : should set mixed-case attribute in HTML mode without duplicate keys', () => {
+      const $svg = load('<svg viewBox="0 0 100 100"></svg>')('svg');
+      $svg.attr({ viewBox: '0 0 60 60' });
+      expect($svg.attr('viewBox')).toBe('0 0 60 60');
+      expect(Object.keys($svg[0].attribs)).toEqual(['viewBox']);
+    });
+
+    it('(key, function) : should pass the current value and set mixed-case attribute in HTML mode', () => {
+      const $svg = load('<svg viewBox="0 0 100 100"></svg>')('svg');
+      $svg.attr('viewBox', (_i, current) => `${current}!`);
+      expect($svg.attr('viewBox')).toBe('0 0 100 100!');
+      expect(Object.keys($svg[0].attribs)).toEqual(['viewBox']);
     });
   });
 
@@ -291,6 +327,14 @@ describe('$(...)', () => {
       checkbox.prop('checked', true);
       expect(checkbox.prop('checked')).toBe(true);
       expect(checkbox.attr('checked')).toBe('checked');
+    });
+
+    it('(key, value) : should read back a prop set with a mixed-case name', () => {
+      const $div = load('<div></div>')('div');
+      $div.prop('viewBox', '0 0 10 10');
+      expect($div.prop('viewBox')).toBe('0 0 10 10');
+      $div.prop('ID', 'x');
+      expect($div.prop('ID')).toBe('x');
     });
 
     it('(key, value) : should update namespace', () => {
@@ -926,6 +970,13 @@ describe('$(...)', () => {
       expect($html.attr('ID')).toBeUndefined();
       expect($html.attr('id')).toBeUndefined();
       expect($html.attr('CLASS')).toBe('apple');
+    });
+
+    it('(key) : should remove mixed-case attribute in HTML mode', () => {
+      const $svg = load('<svg viewBox="0 0 100 100"></svg>')('svg');
+      $svg.removeAttr('viewBox');
+      expect($svg.attr('viewBox')).toBeUndefined();
+      expect(Object.keys($svg[0].attribs)).toEqual([]);
     });
   });
 

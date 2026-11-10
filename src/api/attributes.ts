@@ -24,6 +24,42 @@ const hrefTags = new Set(['a', 'link']);
 const srcTags = new Set(['img', 'iframe', 'audio', 'video', 'source']);
 
 /**
+ * Lowercases ASCII letters only (`A`–`Z` → `a`–`z`), leaving non-ASCII
+ * characters untouched. HTML attribute names are matched ASCII
+ * case-insensitively, while `String#toLowerCase()` folds Unicode as well
+ * (e.g. U+212A KELVIN SIGN → `'k'`, U+0130 → two code points), mapping names
+ * the parser never produces.
+ *
+ * @param name - The attribute name to lowercase.
+ * @returns The name with ASCII uppercase letters lowercased.
+ */
+function toLowerCaseAscii(name: string): string {
+  return name.replace(/[A-Z]/g, (char) => char.toLowerCase());
+}
+
+/**
+ * Resolve the attribute key to use in HTML mode: prefer the exact key when
+ * the element already has it — the parser keeps mixed-case names such as SVG
+ * `viewBox` — and fall back to the ASCII-lowercased name otherwise, so
+ * `.attr('ID')` still finds a parser-lowercased `id` (see #581). In XML mode
+ * the name is used as-is.
+ *
+ * @param elem - The element whose attributes are inspected.
+ * @param name - The attribute name as supplied by the caller.
+ * @param xmlMode - Disable handling of special HTML attributes.
+ * @returns The key to look up, set, or delete in `elem.attribs`.
+ */
+function resolveAttrName(
+  elem: Element,
+  name: string,
+  xmlMode?: boolean,
+): string {
+  return xmlMode || Object.hasOwn(elem.attribs ?? {}, name)
+    ? name
+    : toLowerCaseAscii(name);
+}
+
+/**
  * Gets a node's attribute. For boolean attributes, it will return the value's
  * name should it be set.
  *
@@ -67,10 +103,10 @@ function getAttr(
   /*
    * In HTML mode, attribute names are case-insensitive, so look them up
    * case-insensitively to match the parser's lowercased attribute names.
+   * Prefer the exact key when it exists: the parser keeps mixed-case names
+   * such as SVG `viewBox`.
    */
-  if (!xmlMode) {
-    name = name.toLowerCase();
-  }
+  name = resolveAttrName(elem, name, xmlMode);
 
   if (Object.hasOwn(elem.attribs, name)) {
     // Get the (decoded) attribute
@@ -212,11 +248,15 @@ export function attr<T extends AnyNode>(
       if (typeof name !== 'string') {
         throw new TypeError('Bad combination of arguments.');
       }
-      const attrName = xmlMode ? name : name.toLowerCase();
       return domEach(this, (el, i) => {
-        if (isTag(el)) {
-          setAttr(el, attrName, value.call(el, i, el.attribs[attrName]));
-        }
+        if (!isTag(el)) return;
+
+        /*
+         * Resolve per element: the exact key may exist on some elements
+         * (e.g. SVG `viewBox`) and not on others.
+         */
+        const attrName = resolveAttrName(el, name, xmlMode);
+        setAttr(el, attrName, value.call(el, i, el.attribs[attrName]));
       });
     }
 
@@ -225,13 +265,13 @@ export function attr<T extends AnyNode>(
 
       if (typeof name === 'object') {
         for (const [objName, objValue] of Object.entries(name)) {
-          setAttr(el, xmlMode ? objName : objName.toLowerCase(), objValue);
+          setAttr(el, resolveAttrName(el, objName, xmlMode), objValue);
         }
       } else {
         if (typeof name !== 'string') {
           throw new TypeError('Bad combination of arguments.');
         }
-        setAttr(el, xmlMode ? name : name.toLowerCase(), value ?? null);
+        setAttr(el, resolveAttrName(el, name, xmlMode), value ?? null);
       }
     });
   }
@@ -279,9 +319,13 @@ function setProp(el: Element, name: string, value: unknown, xmlMode?: boolean) {
     // @ts-expect-error Overriding value
     el[name] = value;
   } else {
+    /*
+     * Resolve the key the same way reads do, so a prop written here is
+     * found again by `prop()` (e.g. `viewBox`, or `ID` on a lowercased `id`).
+     */
     setAttr(
       el,
-      name,
+      resolveAttrName(el, name, xmlMode),
       !xmlMode && rboolean.test(name)
         ? value
           ? ''
@@ -905,7 +949,7 @@ export function removeAttr<T extends AnyNode>(
   for (const attrName of attrNames) {
     domEach(this, (elem) => {
       if (isTag(elem)) {
-        removeAttribute(elem, xmlMode ? attrName : attrName.toLowerCase());
+        removeAttribute(elem, resolveAttrName(elem, attrName, xmlMode));
       }
     });
   }
